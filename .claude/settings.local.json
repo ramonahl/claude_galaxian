@@ -1,0 +1,38 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pkg-config --cflags raylib 2>/dev/null && pkg-config --modversion raylib 2>/dev/null)",
+      "Bash(./galaxian:*)",
+      "WebFetch(domain:www.spriters-resource.com)",
+      "Bash(./sprite_tool --input sprites/enemy1p1.png --name SPR_ENEMY1P1 --output /tmp/spr_enemy1p1_new.h --preview /tmp/spr_enemy1p1_new.png)",
+      "Bash(python3 -c \":*)",
+      "Bash(./sprite_tool --input sprites/enemy1p1.png --name SPR_ENEMY1P1 --colorkey 0,0,0 --output /tmp/spr_enemy1p1_new.h --preview /tmp/spr_enemy1p1_new.png)",
+      "Bash(./sprite_tool --input sprites/enemy1p1.png --name SPR_ENEMY1P1 --colorkey 0,0,0 --output tools/spr_enemy1p1.h --preview tools/spr_enemy1p1_preview.png)",
+      "WebFetch(domain:github.com)",
+      "Read(//usr/**)",
+      "Bash(pip3 --version)",
+      "Bash(python3 -m pip --version)",
+      "Bash(sudo apt-get install -y python3-pip)",
+      "Bash(git clone https://github.com/rkdfx/aseprite-mcp.git)",
+      "Bash(python3 -m pip install -e /tmp/aseprite-mcp)",
+      "Bash(sudo apt-get install -y pipx)",
+      "Bash(pipx install /tmp/aseprite-mcp)",
+      "Bash(~/.local/bin/aseprite-mcp --help)",
+      "Bash(python3 -m pipx install /tmp/aseprite-mcp)",
+      "Bash(/home/iot/.local/bin/aseprite-mcp --help)",
+      "Bash(timeout 3 /home/iot/.local/bin/aseprite-mcp)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(ASEPRITE_PATH=/usr/bin/aseprite timeout 3 /home/iot/.local/bin/aseprite-mcp)",
+      "Bash(claude mcp add aseprite /home/iot/.local/bin/aseprite-mcp --env ASEPRITE_PATH=/usr/bin/aseprite)",
+      "Bash(claude mcp list)",
+      "mcp__aseprite__create_canvas",
+      "mcp__aseprite__draw_pixels",
+      "mcp__aseprite__export_sprite",
+      "Bash(./sprite_tool --input sprites/enemy1p1_v2.png --name SPR_ENEMY1P1 --output tools/spr_enemy1p1.h --preview tools/spr_enemy1p1_preview.png)",
+      "Bash(./sprite_tool --input sprites/enemy1p1_v2.png --name SPR_ENEMY1P1 --exact --output tools/spr_enemy1p1.h --preview tools/spr_enemy1p1_preview.png)",
+      "Bash(./sprite_tool --input sprites/enemy_mantis.png --name SPR_MANTIS --exact --output tools/spr_mantis.h --preview tools/spr_mantis_preview.png)",
+      "Bash(./sprite_tool --input sprites/enemy_hornet.png --name SPR_HORNET --exact --output tools/spr_hornet.h --preview tools/spr_hornet_preview.png)",
+      "Bash(./sprite_tool --input sprites/enemigoGPT1_16.png --name SPR_ENEMIGO_GPT1 --colorkey 0,0,0 --exact --output tools/spr_enemigogpt1.h --preview tools/spr_enemigogpt1_preview.png)"
+    ]
+  }
+}
