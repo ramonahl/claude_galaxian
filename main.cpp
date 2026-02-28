@@ -20,7 +20,9 @@ static constexpr int   WINDOW_SCALE  = 2;
 static constexpr int   FPS_TARGET    = 60;
 
 // Player
-static constexpr float PLAYER_SPEED  = 320.f;
+static constexpr float PLAYER_MAX_SPEED = 320.f;
+static constexpr float PLAYER_ACCEL     = 2400.f;
+static constexpr float PLAYER_DECEL     = 5200.f;
 static constexpr float PLAYER_Y      = SH - 80.f;
 static constexpr float BULLET_SPEED  = 520.f;
 static constexpr float BULLET_W      = 3.f;
@@ -33,6 +35,12 @@ static constexpr float CELL_W        = 44.f;
 static constexpr float CELL_H        = 50.f;
 static constexpr float FORM_START_X  = (SW - COLS * CELL_W) / 2.f;
 static constexpr float FORM_START_Y  = 80.f;
+static constexpr float FORM_BOB_AMP  = 7.f;
+static constexpr float FORM_BOB_FREQ = 2.2f;
+static constexpr float FORM_ROW_AMP  = 1.0f;
+static constexpr float FORM_ROW_PHASE= 0.55f;
+static constexpr float FORM_COL_AMP  = 3.2f;
+static constexpr float FORM_COL_PHASE= 0.60f;
 
 // Enemy bullet
 static constexpr float EBULLET_W     = 4.f;
@@ -237,31 +245,45 @@ struct SpriteAssets {
 
 static SpriteAssets gSprites;
 
-static void drawTextureCentered(const Texture2D& tex, float cx, float cy, float size) {
+static void drawTextureCentered(const Texture2D& tex, float cx, float cy, float size, float rotationDeg = 0.f, bool pixelSnap = true) {
     if (tex.id == 0) return;
     Rectangle src = {0.f, 0.f, (float)tex.width, (float)tex.height};
-    // Pixel snap to reduce sprite shimmering when moving.
-    Rectangle dst = {std::roundf(cx), std::roundf(cy), size, size};
+    float drawX = pixelSnap ? std::roundf(cx) : cx;
+    float drawY = pixelSnap ? std::roundf(cy) : cy;
+    Rectangle dst = {drawX, drawY, size, size};
     Vector2 origin = {size * 0.5f, size * 0.5f};
-    DrawTexturePro(tex, src, dst, origin, 0.f, WHITE);
+    DrawTexturePro(tex, src, dst, origin, rotationDeg, WHITE);
 }
 
 void drawPlayerShip(float cx, float cy, float size = PLAYER_DRAW_SIZE) {
     drawTextureCentered(gSprites.player, cx, cy, size);
 }
 
-void drawEnemy(EnemyType type, float cx, float cy) {
+static float enemyBaseRotation(EnemyType type) {
     switch (type) {
         case EnemyType::FLAGSHIP:
         case EnemyType::ESCORT:
-            drawTextureCentered(gSprites.enemy1, cx, cy, ENEMY_DRAW_SIZE);
+            return 0.f;
+        case EnemyType::ZAKO_BLUE:
+        case EnemyType::ZAKO_BLUE2:
+        case EnemyType::ZAKO_GREEN:
+            return 180.f;
+    }
+    return 0.f;
+}
+
+void drawEnemy(EnemyType type, float cx, float cy, float rotationDeg = 0.f) {
+    switch (type) {
+        case EnemyType::FLAGSHIP:
+        case EnemyType::ESCORT:
+            drawTextureCentered(gSprites.enemy1, cx, cy, ENEMY_DRAW_SIZE, rotationDeg, false);
             break;
         case EnemyType::ZAKO_BLUE:
         case EnemyType::ZAKO_BLUE2:
-            drawTextureCentered(gSprites.enemy2, cx, cy, ENEMY_DRAW_SIZE);
+            drawTextureCentered(gSprites.enemy2, cx, cy, ENEMY_DRAW_SIZE, rotationDeg, false);
             break;
         case EnemyType::ZAKO_GREEN:
-            drawTextureCentered(gSprites.enemy3, cx, cy, ENEMY_DRAW_SIZE);
+            drawTextureCentered(gSprites.enemy3, cx, cy, ENEMY_DRAW_SIZE, rotationDeg, false);
             break;
     }
 }
@@ -333,6 +355,7 @@ static Vector2 bezier(Vector2 p0, Vector2 p1, Vector2 p2, Vector2 p3, float t) {
 struct Player {
     float  x = SW / 2.f;
     float  y = PLAYER_Y;
+    float  vx = 0.f;
     int    lives = 3;
     int    shotLevel = 1;      // 1=single, 2=double, 3=triple
     float  shotCooldown = 0.22f;
@@ -391,6 +414,7 @@ struct Game {
         round   = 1;
         formVX  = 30.f;
         player.x = SW / 2.f;
+        player.vx = 0.f;
         player.lives = 3;
         player.shotLevel = 1;
         player.shotCooldown = 0.22f;
@@ -435,10 +459,10 @@ struct Game {
         }
 
         static const EnemyType rowType[ROWS] = {
-            EnemyType::FLAGSHIP,   // enemy1
-            EnemyType::ESCORT,     // enemy1
-            EnemyType::ZAKO_BLUE,  // enemy2
-            EnemyType::ZAKO_GREEN  // enemy3
+            EnemyType::ZAKO_GREEN, // enemy3 (arriba)
+            EnemyType::ZAKO_GREEN, // enemy3 (arriba)
+            EnemyType::ZAKO_BLUE,  // enemy2 (medio)
+            EnemyType::ESCORT      // enemy1 (abajo)
         };
 
         static const int rowCount[ROWS] = {2, 6, 8, 10};
@@ -473,8 +497,12 @@ struct Game {
     float formationX(int col) const {
         return FORM_START_X + col * CELL_W + CELL_W/2.f + formOffX;
     }
-    float formationY(int row) const {
-        return FORM_START_Y + row * CELL_H + CELL_H/2.f + formOffY;
+    float formationY(int row, int col) const {
+        // Tie wave phase to both time and lateral offset to avoid phase jumps at edge bounces.
+        float t = formSineT * FORM_BOB_FREQ + formOffX * 0.08f;
+        float rowBob = sinf(t + row * FORM_ROW_PHASE) * FORM_ROW_AMP;
+        float colWave = sinf(t + col * FORM_COL_PHASE + row * 0.25f) * FORM_COL_AMP;
+        return FORM_START_Y + row * CELL_H + CELL_H/2.f + formOffY + rowBob + colWave;
     }
 
     // Speed factor based on enemies killed
@@ -567,8 +595,8 @@ struct Game {
         float side = (e.x < SW/2.f) ? -1.f : 1.f;
         e.retP0 = {e.x,    (float)SH + 40.f};
         e.retP1 = {e.x + side*160.f, SH/2.f};
-        e.retP2 = {e.formX + formOffX, FORM_START_Y - 80.f};
-        e.retP3 = {e.formX + formOffX, e.formY + formOffY};
+        e.retP2 = {formationX(e.col), FORM_START_Y - 80.f};
+        e.retP3 = {formationX(e.col), formationY(e.row, e.col)};
     }
 
     void firePlayerShot(float offsetX) {
@@ -642,6 +670,7 @@ struct Game {
                 stateTimer = 3.f;
             } else {
                 player.x = SW / 2.f;
+                player.vx = 0.f;
                 player.alive = true;
                 pBullets.clear();
                 player.invincible = true;
@@ -679,13 +708,29 @@ struct Game {
         }
         if (player.shotTimer > 0.f) player.shotTimer -= dt;
 
-        // Player movement
-        if (IsKeyDown(KEY_LEFT)  || IsKeyDown(KEY_A))
-            player.x -= PLAYER_SPEED * dt;
-        if (IsKeyDown(KEY_RIGHT) || IsKeyDown(KEY_D))
-            player.x += PLAYER_SPEED * dt;
-        if (player.x < 16.f)        player.x = 16.f;
-        if (player.x > SW - 16.f)   player.x = SW - 16.f;
+        // Player movement with acceleration/deceleration ramps
+        float moveInput = 0.f;
+        if (IsKeyDown(KEY_LEFT) || IsKeyDown(KEY_A)) moveInput -= 1.f;
+        if (IsKeyDown(KEY_RIGHT) || IsKeyDown(KEY_D)) moveInput += 1.f;
+
+        if (moveInput != 0.f) {
+            player.vx += moveInput * PLAYER_ACCEL * dt;
+            player.vx = std::clamp(player.vx, -PLAYER_MAX_SPEED, PLAYER_MAX_SPEED);
+        } else {
+            float decel = PLAYER_DECEL * dt;
+            if (std::fabs(player.vx) <= decel) player.vx = 0.f;
+            else player.vx -= std::copysign(decel, player.vx);
+        }
+
+        player.x += player.vx * dt;
+        if (player.x < 16.f) {
+            player.x = 16.f;
+            if (player.vx < 0.f) player.vx = 0.f;
+        }
+        if (player.x > SW - 16.f) {
+            player.x = SW - 16.f;
+            if (player.vx > 0.f) player.vx = 0.f;
+        }
 
         // Player shoot (hold to fire)
         if (IsKeyDown(KEY_SPACE) && player.shotTimer <= 0.f) {
@@ -717,7 +762,7 @@ struct Game {
             if (!e.alive) continue;
             if (e.state == EnemyState::IN_FORMATION) {
                 e.x = formationX(e.col);
-                e.y = formationY(e.row);
+                e.y = formationY(e.row, e.col);
             }
         }
 
@@ -877,16 +922,34 @@ struct Game {
 
     void updateFormationMotion(float dt) {
         float sf = (state == GameState::PLAYING) ? speedFactor() : 1.f;
-        formOffX += formVX * sf * dt;
+        float dir = (formVX >= 0.f) ? 1.f : -1.f;
+        float speed = std::abs(formVX) * sf;
 
-        // Edges
+        // Edges (soft turn near borders to avoid harsh direction changes)
         float maxX = (float)(SW - COLS * CELL_W) / 2.f - 10.f;
-        if (formOffX > maxX)  { formOffX =  maxX; formVX = -std::abs(formVX); }
-        if (formOffX < -maxX) { formOffX = -maxX; formVX =  std::abs(formVX); }
+        float distToEdge = (dir > 0.f) ? (maxX - formOffX) : (formOffX + maxX);
+        const float softZone = 26.f;
+        float edgeFactor = 1.f;
+        if (distToEdge < softZone) {
+            edgeFactor = std::clamp(distToEdge / softZone, 0.35f, 1.f);
+        }
 
-        // Vertical sine
+        formOffX += dir * speed * edgeFactor * dt;
+
+        if (formOffX > maxX) {
+            float overshoot = formOffX - maxX;
+            formOffX = maxX - overshoot;
+            formVX = -std::abs(formVX);
+        }
+        if (formOffX < -maxX) {
+            float overshoot = -maxX - formOffX;
+            formOffX = -maxX + overshoot;
+            formVX = std::abs(formVX);
+        }
+
+        // Vertical bobbing (Galaxian-like subtle up/down movement)
         formSineT += dt;
-        formOffY  = sinf(formSineT * 0.7f) * 5.f;
+        formOffY  = sinf(formSineT * FORM_BOB_FREQ) * FORM_BOB_AMP;
     }
 
     void updateDiving(Enemy& e, float dt) {
@@ -934,7 +997,7 @@ struct Game {
         e.retT += (e.diveSpeed * 0.8f / arcLen) * dt;
 
         // Keep destination updated with current formation position
-        e.retP3 = {formationX(e.col), formationY(e.row)};
+        e.retP3 = {formationX(e.col), formationY(e.row, e.col)};
 
         if (e.retT >= 1.f) {
             e.retT  = 1.f;
@@ -1035,7 +1098,15 @@ struct Game {
 
         for (const auto& e : enemies) {
             if (!e.alive) continue;
-            drawEnemy(e.type, e.x, e.y);
+            float rot = enemyBaseRotation(e.type);
+            if (e.state == EnemyState::DIVING) {
+                float dx = player.x - e.x;
+                float dy = player.y - e.y;
+                // 0 deg points "down" in this sprite set; add base per enemy art orientation.
+                float aimDeg = std::atan2(dy, dx) * RAD2DEG - 90.f;
+                rot += aimDeg;
+            }
+            drawEnemy(e.type, e.x, e.y, rot);
         }
     }
 
@@ -1137,7 +1208,7 @@ struct Game {
 int main() {
     srand((unsigned)time(nullptr));
 
-    SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_VSYNC_HINT);
+    SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_VSYNC_HINT | FLAG_WINDOW_HIGHDPI);
     InitWindow(SW * WINDOW_SCALE, SH * WINDOW_SCALE, "GALAXIAN");
     SetTargetFPS(FPS_TARGET);
     SetRandomSeed((unsigned)time(nullptr));
@@ -1149,8 +1220,21 @@ int main() {
     game.stars.init();
     // Build attract-mode formation
     game.buildFormation();
+    int windowedW = SW * WINDOW_SCALE;
+    int windowedH = SH * WINDOW_SCALE;
 
     while (!WindowShouldClose()) {
+        if (IsKeyPressed(KEY_F11)) {
+            if (IsWindowFullscreen()) {
+                ToggleFullscreen();
+                SetWindowSize(windowedW, windowedH);
+            } else {
+                windowedW = GetScreenWidth();
+                windowedH = GetScreenHeight();
+                ToggleFullscreen();
+            }
+        }
+
         float dt = GetFrameTime();
         game.update(dt);
 
@@ -1160,12 +1244,14 @@ int main() {
 
         BeginDrawing();
         ClearBackground(BLACK);
-        float baseScale = std::min((float)GetScreenWidth() / SW, (float)GetScreenHeight() / SH);
-        float scale = (baseScale >= 1.f) ? std::floor(baseScale) : baseScale;
+        int renderW = GetRenderWidth();
+        int renderH = GetRenderHeight();
+        float baseScale = std::min((float)renderW / SW, (float)renderH / SH);
+        float scale = std::max(0.01f, baseScale);
         float drawW = std::round(SW * scale);
         float drawH = std::round(SH * scale);
-        float drawX = std::floor(((float)GetScreenWidth() - drawW) * 0.5f);
-        float drawY = std::floor(((float)GetScreenHeight() - drawH) * 0.5f);
+        float drawX = std::floor(((float)renderW - drawW) * 0.5f);
+        float drawY = std::floor(((float)renderH - drawH) * 0.5f);
         Rectangle src = {0.f, 0.f, (float)SW, -(float)SH};
         Rectangle dst = {drawX, drawY, drawW, drawH};
         DrawTexturePro(scene.texture, src, dst, {0.f, 0.f}, 0.f, WHITE);
