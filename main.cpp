@@ -1208,10 +1208,19 @@ struct Game {
 int main() {
     srand((unsigned)time(nullptr));
 
-    SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_VSYNC_HINT | FLAG_WINDOW_HIGHDPI);
-    InitWindow(SW * WINDOW_SCALE, SH * WINDOW_SCALE, "GALAXIAN");
+    SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_VSYNC_HINT);
+    InitWindow(SW, SH, "GALAXIAN");
     SetTargetFPS(FPS_TARGET);
     SetRandomSeed((unsigned)time(nullptr));
+
+    // Auto-scale initial window to fit ~85% of monitor height
+    int mon = GetCurrentMonitor();
+    int monH = GetMonitorHeight(mon);
+    int initScale = std::max(1, (int)std::floor((float)monH * 0.85f / SH));
+    int windowedW = SW * initScale;
+    int windowedH = SH * initScale;
+    SetWindowSize(windowedW, windowedH);
+
     gSprites.load();
     RenderTexture2D scene = LoadRenderTexture(SW, SH);
     SetTextureFilter(scene.texture, TEXTURE_FILTER_POINT);
@@ -1220,8 +1229,6 @@ int main() {
     game.stars.init();
     // Build attract-mode formation
     game.buildFormation();
-    int windowedW = SW * WINDOW_SCALE;
-    int windowedH = SH * WINDOW_SCALE;
 
     while (!WindowShouldClose()) {
         if (IsKeyPressed(KEY_F11)) {
@@ -1244,8 +1251,8 @@ int main() {
 
         BeginDrawing();
         ClearBackground(BLACK);
-        int renderW = GetRenderWidth();
-        int renderH = GetRenderHeight();
+        int renderW = GetScreenWidth();
+        int renderH = GetScreenHeight();
         float baseScale = std::min((float)renderW / SW, (float)renderH / SH);
         float scale = std::max(0.01f, baseScale);
         float drawW = std::round(SW * scale);

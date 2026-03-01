@@ -32,7 +32,11 @@
       "Bash(./sprite_tool --input sprites/enemy1p1_v2.png --name SPR_ENEMY1P1 --exact --output tools/spr_enemy1p1.h --preview tools/spr_enemy1p1_preview.png)",
       "Bash(./sprite_tool --input sprites/enemy_mantis.png --name SPR_MANTIS --exact --output tools/spr_mantis.h --preview tools/spr_mantis_preview.png)",
       "Bash(./sprite_tool --input sprites/enemy_hornet.png --name SPR_HORNET --exact --output tools/spr_hornet.h --preview tools/spr_hornet_preview.png)",
-      "Bash(./sprite_tool --input sprites/enemigoGPT1_16.png --name SPR_ENEMIGO_GPT1 --colorkey 0,0,0 --exact --output tools/spr_enemigogpt1.h --preview tools/spr_enemigogpt1_preview.png)"
+      "Bash(./sprite_tool --input sprites/enemigoGPT1_16.png --name SPR_ENEMIGO_GPT1 --colorkey 0,0,0 --exact --output tools/spr_enemigogpt1.h --preview tools/spr_enemigogpt1_preview.png)",
+      "Bash(pkg-config --libs raylib)",
+      "Bash(ldconfig -p)",
+      "Bash(dnf list installed)",
+      "Bash(dnf search raylib)"
     ]
   }
 }
