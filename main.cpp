@@ -48,8 +48,8 @@ static constexpr float EBULLET_H     = 10.f;
 static constexpr float EBULLET_SPEED = 240.f;
 
 // Particles
-static constexpr float PARTICLE_LIFE = 0.4f;
-static constexpr int   PARTICLE_COUNT= 8;
+static constexpr float PARTICLE_LIFE = 0.55f;
+static constexpr int   PARTICLE_COUNT= 18;
 
 // ─────────────────────────────────────────────────────────────
 //  ENUMS & TYPES
@@ -127,33 +127,104 @@ struct PowerUp {
 // ─────────────────────────────────────────────────────────────
 //  PARTICLES
 // ─────────────────────────────────────────────────────────────
+enum class ParticleType { DOT, SPARK };
+
 struct Particle {
     float x, y, vx, vy;
-    float life;        // remaining life 0..PARTICLE_LIFE
-    float maxLife;
+    float life, maxLife;
     float size;
+    Color color;
+    ParticleType type = ParticleType::DOT;
+    bool  active = false;
+};
+
+struct Flash {
+    float x, y;
+    float life, maxLife;
+    float radius;
+    bool  active = false;
+};
+
+struct Debris {
+    float x, y, vx, vy;
+    float rot, rotSpeed;   // degrees
+    float life, maxLife;
+    float w, h;
+    Color color;
     bool  active = false;
 };
 
 static std::vector<Particle> gParticles;
+static std::vector<Flash>    gFlashes;
+static std::vector<Debris>   gDebris;
+static float                 gShake = 0.f;
 
-void spawnExplosion(float cx, float cy) {
-    for (int i = 0; i < PARTICLE_COUNT; ++i) {
-        float angle = (float)i / PARTICLE_COUNT * 2.f * PI;
-        float speed = (float)GetRandomValue(60, 160);
+void spawnExplosion(float cx, float cy, bool big = false) {
+    // Screen shake
+    gShake = std::max(gShake, big ? 7.f : 4.f);
+
+    // Debris fragments (rotando, se desvanecen lento)
+    int dcount = big ? 5 : 2;
+    static const Color debrisColors[4] = {
+        {220, 220, 220, 255}, // grey metal
+        {255, 180,  40, 255}, // hot orange
+        {100, 210, 255, 255}, // blue hull
+        {255, 255, 120, 255}, // yellow spark
+    };
+    for (int i = 0; i < dcount; ++i) {
+        float angle = GetRandomValue(0, 359) * DEG2RAD;
+        float spd   = (float)GetRandomValue(70, big ? 200 : 140);
+        Debris d;
+        d.x = cx + GetRandomValue(-5, 5);
+        d.y = cy + GetRandomValue(-5, 5);
+        d.vx = cosf(angle) * spd;
+        d.vy = sinf(angle) * spd;
+        d.rot      = (float)GetRandomValue(0, 359);
+        d.rotSpeed = (float)GetRandomValue(-480, 480);
+        d.life = d.maxLife = 0.45f + GetRandomValue(0, 35) * 0.01f;
+        d.w = big ? (float)GetRandomValue(6, 11) : (float)GetRandomValue(3, 7);
+        d.h = d.w * 0.45f;
+        d.color = debrisColors[GetRandomValue(0, 3)];
+        d.active = true;
+        gDebris.push_back(d);
+    }
+
+    // Initial bright flash + expanding ring
+    Flash fl;
+    fl.x = cx; fl.y = cy;
+    fl.life = fl.maxLife = 0.18f;
+    fl.radius = big ? 32.f : 22.f;
+    fl.active = true;
+    gFlashes.push_back(fl);
+
+    // Debris particles
+    int count = big ? PARTICLE_COUNT + 8 : PARTICLE_COUNT;
+    for (int i = 0; i < count; ++i) {
+        float angle = (float)i / count * 2.f * PI + GetRandomValue(-8, 8) * 0.06f;
+        float speed = (float)GetRandomValue(55, big ? 210 : 170);
+
         Particle p;
-        p.x    = cx;  p.y = cy;
-        p.vx   = cosf(angle) * speed;
-        p.vy   = sinf(angle) * speed;
-        p.life = PARTICLE_LIFE;
-        p.maxLife = PARTICLE_LIFE;
-        p.size = (float)GetRandomValue(3, 5);
+        p.x = cx; p.y = cy;
+        p.vx = cosf(angle) * speed;
+        p.vy = sinf(angle) * speed;
+        p.life = p.maxLife = PARTICLE_LIFE * (0.75f + GetRandomValue(0, 50) * 0.005f);
+        p.size = (float)GetRandomValue(2, big ? 6 : 5);
         p.active = true;
+        p.type = (GetRandomValue(0, 2) == 0) ? ParticleType::SPARK : ParticleType::DOT;
+
+        int roll = GetRandomValue(0, 3);
+        if      (roll == 0) p.color = {255, 255, 220, 255}; // white-yellow
+        else if (roll == 1) p.color = {255, 220,  30, 255}; // bright yellow
+        else if (roll == 2) p.color = {255, 130,   0, 255}; // orange
+        else                p.color = {255,  50,   0, 255}; // red-orange
+
         gParticles.push_back(p);
     }
 }
 
 void updateParticles(float dt) {
+    gShake = std::max(0.f, gShake - dt * 35.f);
+
     for (auto& p : gParticles) {
         if (!p.active) continue;
         p.x += p.vx * dt;
@@ -163,15 +234,80 @@ void updateParticles(float dt) {
     }
     gParticles.erase(std::remove_if(gParticles.begin(), gParticles.end(),
         [](const Particle& p){ return !p.active; }), gParticles.end());
+
+    for (auto& f : gFlashes) {
+        if (!f.active) continue;
+        f.life -= dt;
+        if (f.life <= 0.f) f.active = false;
+    }
+    gFlashes.erase(std::remove_if(gFlashes.begin(), gFlashes.end(),
+        [](const Flash& f){ return !f.active; }), gFlashes.end());
+
+    for (auto& d : gDebris) {
+        if (!d.active) continue;
+        d.x   += d.vx * dt;
+        d.y   += d.vy * dt;
+        d.vy  += 90.f * dt;   // gravedad suave
+        d.rot += d.rotSpeed * dt;
+        d.life -= dt;
+        if (d.life <= 0.f) d.active = false;
+    }
+    gDebris.erase(std::remove_if(gDebris.begin(), gDebris.end(),
+        [](const Debris& d){ return !d.active; }), gDebris.end());
 }
 
 void drawParticles() {
+    BeginBlendMode(BLEND_ADDITIVE);
+
+    // Flash + shockwave ring
+    for (const auto& f : gFlashes) {
+        if (!f.active) continue;
+        float t = f.life / f.maxLife;
+        // Core flash (shrinks slightly)
+        float r = f.radius * (0.9f + t * 0.4f);
+        unsigned char fa = (unsigned char)(t * 230);
+        DrawCircleGradient((int)f.x, (int)f.y, r,
+            {255, 255, 255, fa}, {255, 180, 20, 0});
+        // Expanding ring (grows outward as flash fades)
+        float ringR = f.radius * (1.0f + (1.0f - t) * 2.2f);
+        unsigned char ra = (unsigned char)(t * 160);
+        DrawRing({f.x, f.y}, ringR - 1.5f, ringR + 1.5f, 0, 360, 24,
+            {255, 200, 60, ra});
+    }
+
+    // Debris
     for (const auto& p : gParticles) {
         if (!p.active) continue;
         float t = p.life / p.maxLife;
         unsigned char alpha = (unsigned char)(t * 255);
-        float sz = p.size * t;
-        DrawCircle((int)p.x, (int)p.y, sz, {255, 160, 0, alpha});
+        Color c = {p.color.r, p.color.g, p.color.b, alpha};
+
+        if (p.type == ParticleType::SPARK) {
+            float len = p.size * 5.f * t;
+            float mag = sqrtf(p.vx * p.vx + p.vy * p.vy);
+            if (mag > 0.f) {
+                float nx = p.vx / mag, ny = p.vy / mag;
+                Vector2 tail = {p.x - nx * len, p.y - ny * len};
+                DrawLineEx(tail, {p.x, p.y}, 1.5f, c);
+            }
+        } else {
+            float sz = p.size * (0.4f + 0.6f * t);
+            DrawCircleGradient((int)p.x, (int)p.y, sz, c,
+                {p.color.r, p.color.g, p.color.b, 0});
+        }
+    }
+
+    EndBlendMode();
+
+    // Debris fragments – blend normal, sólidos
+    for (const auto& d : gDebris) {
+        if (!d.active) continue;
+        float t = d.life / d.maxLife;
+        unsigned char alpha = (unsigned char)(t * 230);
+        Color c = {d.color.r, d.color.g, d.color.b, alpha};
+        Rectangle rect = {d.x, d.y, d.w, d.h};
+        Vector2 origin = {d.w * 0.5f, d.h * 0.5f};
+        DrawRectanglePro(rect, origin, d.rot, c);
     }
 }
 
@@ -425,6 +561,9 @@ struct Game {
         eBullets.clear();
         powerUps.clear();
         gParticles.clear();
+        gFlashes.clear();
+        gDebris.clear();
+        gShake = 0.f;
         buildFormation();
     }
 
@@ -818,7 +957,7 @@ struct Game {
                     boss.active = false;
                     score += 1000 + round * 80;
                     highScore = std::max(highScore, score);
-                    spawnExplosion(boss.x, boss.y);
+                    spawnExplosion(boss.x, boss.y, true);
                     spawnPowerUp(boss.x, boss.y);
                 }
                 continue;
@@ -1014,7 +1153,7 @@ struct Game {
 
     void killPlayer() {
         if (player.invincible) return;
-        spawnExplosion(player.x, player.y);
+        spawnExplosion(player.x, player.y, true);
         player.lives--;
         player.alive = false;
         player.shotLevel = 1;
@@ -1111,24 +1250,35 @@ struct Game {
     }
 
     void drawBullets() {
-        // Player bullets
+        BeginBlendMode(BLEND_ADDITIVE);
+
+        // Player bullets – bright yellow/white core with soft glow
         for (const auto& b : pBullets) {
             if (!b.active) continue;
-            DrawRectangle(
-                (int)(b.x - BULLET_W/2),
-                (int)(b.y - BULLET_H/2),
+            // Outer glow
+            DrawCircleGradient((int)b.x, (int)(b.y - BULLET_H * 0.3f),
+                BULLET_W * 3.f, {255, 255, 180, 70}, {255, 255, 80, 0});
+            // Core gradient (bright white tip → yellow base)
+            DrawRectangleGradientV(
+                (int)(b.x - BULLET_W/2), (int)(b.y - BULLET_H/2),
                 (int)BULLET_W, (int)BULLET_H,
-                {255, 255, 100, 255});
+                {255, 255, 255, 255}, {255, 210, 30, 200});
         }
-        // Enemy bullets
+
+        // Enemy bullets – red/orange glow
         for (const auto& b : eBullets) {
             if (!b.active) continue;
-            DrawRectangle(
-                (int)(b.x - EBULLET_W/2),
-                (int)(b.y - EBULLET_H/2),
+            // Outer glow
+            DrawCircleGradient((int)b.x, (int)(b.y + EBULLET_H * 0.3f),
+                EBULLET_W * 3.f, {255, 60, 0, 80}, {255, 30, 0, 0});
+            // Core gradient (orange tip → red base)
+            DrawRectangleGradientV(
+                (int)(b.x - EBULLET_W/2), (int)(b.y - EBULLET_H/2),
                 (int)EBULLET_W, (int)EBULLET_H,
-                {255, 60, 60, 255});
+                {255, 180, 40, 200}, {255, 30, 0, 255});
         }
+
+        EndBlendMode();
     }
 
     void drawPowerUps() {
@@ -1259,6 +1409,11 @@ int main() {
         float drawH = std::round(SH * scale);
         float drawX = std::floor(((float)renderW - drawW) * 0.5f);
         float drawY = std::floor(((float)renderH - drawH) * 0.5f);
+        if (gShake > 0.5f) {
+            int s = (int)(gShake * scale);
+            drawX += (float)GetRandomValue(-s, s);
+            drawY += (float)GetRandomValue(-s, s);
+        }
         Rectangle src = {0.f, 0.f, (float)SW, -(float)SH};
         Rectangle dst = {drawX, drawY, drawW, drawH};
         DrawTexturePro(scene.texture, src, dst, {0.f, 0.f}, 0.f, WHITE);
