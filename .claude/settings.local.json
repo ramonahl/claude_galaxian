@@ -36,7 +36,26 @@
       "Bash(pkg-config --libs raylib)",
       "Bash(ldconfig -p)",
       "Bash(dnf list installed)",
-      "Bash(dnf search raylib)"
+      "Bash(dnf search raylib)",
+      "Bash(python extract_sprites.py \"ChatGPT Image 5 mar 2026, 19_53_50.png\" --normalize --threshold 20 --output-dir ../sprites_new/)",
+      "Bash(pip install opencv-python-headless Pillow numpy -q)",
+      "Bash(pip3 install opencv-python-headless Pillow numpy -q)",
+      "Bash(python3 -m pip install opencv-python-headless Pillow numpy -q)",
+      "Bash(dnf install -y python3-opencv python3-pillow python3-numpy)",
+      "Bash(sudo dnf install -y python3-opencv python3-pillow python3-numpy)",
+      "Bash(python3 -c \"import cv2; import numpy; from PIL import Image; print\\(''OK''\\)\")",
+      "Bash(python3 extract_sprites.py \"ChatGPT Image 5 mar 2026, 19_53_50.png\" --normalize --threshold 20 --output-dir ../sprites_new/)",
+      "Bash(python extract_sprites.py enemyCangrejoTile.png --threshold 20 --size 500x500 --output-dir sprites_out)",
+      "Bash(python extract_sprites.py enemyCangrejoTile.png --threshold 8 --size 500x500 --output-dir sprites_out)",
+      "Bash(python extract_sprites.py enemyCangrejoTile.png --threshold 6 --size 500x500 --output-dir sprites_out)",
+      "Bash(python extract_sprites.py enemyCangrejoTile.png --size 500x500 --output-dir sprites_out)",
+      "Bash(rm -f sprites_out/*.png)",
+      "Bash(python extract_sprites.py enemyCangrejoTile.png --threshold 10 --size 500x500 --output-dir sprites_out)",
+      "Bash(python extract_sprites.py enemyGreenTile.png --threshold 20 --size 500x500 --output-dir sprites_out)",
+      "Bash(python extract_sprites.py enemyGreenTile.png --threshold 60 --detect-threshold 60 --size 500x500 --min-area 5000 --output-dir sprites_out)",
+      "Bash(cp /home/ramon/Documentos/GitHub/claude_galaxian/claude_galaxian/tools2/sprites_out/enemyGreenTile_sprite_01.png /home/ramon/Documentos/GitHub/claude_galaxian/claude_galaxian/sprites_new/enemy2_f01.png)",
+      "Bash(cp /home/ramon/Documentos/GitHub/claude_galaxian/claude_galaxian/tools2/sprites_out/enemyGreenTile_sprite_02.png /home/ramon/Documentos/GitHub/claude_galaxian/claude_galaxian/sprites_new/enemy2_f02.png)",
+      "Bash(cp /home/ramon/Documentos/GitHub/claude_galaxian/claude_galaxian/tools2/sprites_out/enemyGreenTile_sprite_03.png /home/ramon/Documentos/GitHub/claude_galaxian/claude_galaxian/sprites_new/enemy2_f03.png)"
     ]
   }
 }

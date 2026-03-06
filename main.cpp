@@ -314,17 +314,58 @@ void drawParticles() {
 // ─────────────────────────────────────────────────────────────
 //  IMAGE SPRITES
 // ─────────────────────────────────────────────────────────────
-static constexpr float PLAYER_DRAW_SIZE = 48.f;
+static constexpr float PLAYER_DRAW_SIZE = 64.f;
 static constexpr float ENEMY_DRAW_SIZE  = 38.f;
 static constexpr float LIFE_ICON_SIZE   = 16.f;
 
 struct SpriteAssets {
     Texture2D player = {};
     Texture2D playerLife = {};
-    Texture2D enemy1 = {};
-    Texture2D enemy2 = {};
+    Texture2D playerBody = {};
+    Texture2D playerThrusters = {};
+    Texture2D enemy1Anim[3] = {};   // 3 frames de animación del cangrejo
+    Texture2D enemy2Anim[3] = {};   // 3 frames de animación del enemigo verde
     Texture2D enemy3 = {};
     bool loaded = false;
+
+    // Carga sin recortar canvas (para sprites compuestos que deben alinearse)
+    // Elimina píxeles marcadores rojo/verde y escala a outputSize x outputSize
+    static Texture2D loadNoTrimTexture(const char* path, int outputSize) {
+        Image img = LoadImage(path);
+        if (img.data == nullptr) {
+            TraceLog(LOG_ERROR, "No se pudo cargar sprite: %s", path);
+            return {};
+        }
+        ImageFormat(&img, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
+        Color* pixels = (Color*)img.data;
+        int total = img.width * img.height;
+        for (int i = 0; i < total; ++i) {
+            Color& c = pixels[i];
+            if (c.r == 255 && c.g == 0 && c.b == 0 && c.a > 128) c = BLANK;
+            if (c.r == 0   && c.g == 255 && c.b == 0 && c.a > 128) c = BLANK;
+        }
+        if (outputSize > 0) {
+            float fit = std::min((float)outputSize / img.width, (float)outputSize / img.height);
+            int scaledW = std::max(1, (int)std::round((float)img.width * fit));
+            int scaledH = std::max(1, (int)std::round((float)img.height * fit));
+            if (img.width != scaledW || img.height != scaledH)
+                ImageResize(&img, scaledW, scaledH);
+            Image canvas = GenImageColor(outputSize, outputSize, BLANK);
+            Rectangle srcRect = {0.f, 0.f, (float)img.width, (float)img.height};
+            Rectangle dstRect = {
+                (float)((outputSize - img.width) / 2),
+                (float)((outputSize - img.height) / 2),
+                (float)img.width, (float)img.height
+            };
+            ImageDraw(&canvas, img, srcRect, dstRect, WHITE);
+            UnloadImage(img);
+            img = canvas;
+        }
+        Texture2D tex = LoadTextureFromImage(img);
+        if (tex.id != 0) SetTextureFilter(tex, TEXTURE_FILTER_POINT);
+        UnloadImage(img);
+        return tex;
+    }
 
     static Texture2D loadTrimmedTexture(const char* path, int outputSize) {
         Image img = LoadImage(path);
@@ -362,24 +403,42 @@ struct SpriteAssets {
     void load() {
         player = loadTrimmedTexture("sprites_new/player1.png", (int)PLAYER_DRAW_SIZE);
         playerLife = loadTrimmedTexture("sprites_new/player1.png", (int)LIFE_ICON_SIZE);
-        enemy1 = loadTrimmedTexture("sprites_new/enemy1.png", (int)ENEMY_DRAW_SIZE);
-        enemy2 = loadTrimmedTexture("sprites_new/enemy2.png", (int)ENEMY_DRAW_SIZE);
+        playerBody       = loadNoTrimTexture("sprites_new/Player1SP.png",          (int)PLAYER_DRAW_SIZE);
+        playerThrusters  = loadNoTrimTexture("sprites_new/Player1Propulsores.png", (int)PLAYER_DRAW_SIZE);
+        enemy1Anim[0] = loadTrimmedTexture("sprites_new/enemy1_f01.png", (int)ENEMY_DRAW_SIZE);
+        enemy1Anim[1] = loadTrimmedTexture("sprites_new/enemy1_f02.png", (int)ENEMY_DRAW_SIZE);
+        enemy1Anim[2] = loadTrimmedTexture("sprites_new/enemy1_f03.png", (int)ENEMY_DRAW_SIZE);
+        enemy2Anim[0] = loadTrimmedTexture("sprites_new/enemy2_f01.png", (int)ENEMY_DRAW_SIZE);
+        enemy2Anim[1] = loadTrimmedTexture("sprites_new/enemy2_f02.png", (int)ENEMY_DRAW_SIZE);
+        enemy2Anim[2] = loadTrimmedTexture("sprites_new/enemy2_f03.png", (int)ENEMY_DRAW_SIZE);
         enemy3 = loadTrimmedTexture("sprites_new/enemy3.png", (int)ENEMY_DRAW_SIZE);
         loaded = player.id != 0 && playerLife.id != 0 &&
-                 enemy1.id != 0 && enemy2.id != 0 && enemy3.id != 0;
+                 enemy1Anim[0].id != 0 && enemy2Anim[0].id != 0 && enemy3.id != 0;
     }
 
     void unload() {
-        if (player.id != 0) UnloadTexture(player);
-        if (playerLife.id != 0) UnloadTexture(playerLife);
-        if (enemy1.id != 0) UnloadTexture(enemy1);
-        if (enemy2.id != 0) UnloadTexture(enemy2);
-        if (enemy3.id != 0) UnloadTexture(enemy3);
+        if (player.id != 0)           UnloadTexture(player);
+        if (playerLife.id != 0)       UnloadTexture(playerLife);
+        if (playerBody.id != 0)       UnloadTexture(playerBody);
+        if (playerThrusters.id != 0)  UnloadTexture(playerThrusters);
+        for (auto& t : enemy1Anim)    if (t.id != 0) UnloadTexture(t);
+        for (auto& t : enemy2Anim)    if (t.id != 0) UnloadTexture(t);
+        if (enemy3.id != 0)           UnloadTexture(enemy3);
         loaded = false;
     }
 };
 
 static SpriteAssets gSprites;
+
+// Animación enemy1: 3 frames a ~7 fps
+static float gEnemyAnimTimer = 0.f;
+static int   gEnemyAnimFrame = 0;
+static constexpr float ENEMY_ANIM_INTERVAL = 1.f / 7.f;
+
+// Animación enemy2: timer independiente a ~4 fps (más lento, fase por columna)
+static float gEnemy2AnimTimer = 0.f;
+static int   gEnemy2AnimFrame = 0;
+static constexpr float ENEMY2_ANIM_INTERVAL = 1.f / 4.f;
 
 static void drawTextureCentered(const Texture2D& tex, float cx, float cy, float size, float rotationDeg = 0.f, bool pixelSnap = true) {
     if (tex.id == 0) return;
@@ -391,8 +450,71 @@ static void drawTextureCentered(const Texture2D& tex, float cx, float cy, float 
     DrawTexturePro(tex, src, dst, origin, rotationDeg, WHITE);
 }
 
-void drawPlayerShip(float cx, float cy, float size = PLAYER_DRAW_SIZE) {
-    drawTextureCentered(gSprites.player, cx, cy, size);
+void drawPlayerShip(float cx, float cy, float vx = 0.f, float thrusterTime = 0.f, float size = PLAYER_DRAW_SIZE) {
+    // ── Propulsores ──────────────────────────────────────────
+    if (gSprites.playerThrusters.id != 0) {
+        float pulse = (sinf(thrusterTime * 5.f) + 1.f) * 0.5f; // 0..1 a ~0.8Hz suave
+
+        float leftAlpha, rightAlpha;
+        const float threshold = 40.f;
+
+        if (vx < -threshold) {
+            // Movimiento izquierda → propulsor DERECHO activo
+            leftAlpha  = 0.22f + pulse * 0.16f;   // 0.22..0.38 visible pero apagado
+            rightAlpha = 0.75f + pulse * 0.20f;   // 0.75..0.95 potente
+        } else if (vx > threshold) {
+            // Movimiento derecha → propulsor IZQUIERDO activo
+            leftAlpha  = 0.75f + pulse * 0.20f;
+            rightAlpha = 0.22f + pulse * 0.16f;
+        } else {
+            // Reposo: ambos pulsan igual, rango estable
+            float a = 0.35f + pulse * 0.30f;       // 0.35..0.65
+            leftAlpha  = a;
+            rightAlpha = a;
+        }
+
+        int ix    = (int)roundf(cx);
+        int iy    = (int)roundf(cy);
+        int half  = (int)(size * 0.5f);
+        int isize = (int)size;
+
+        Rectangle src    = {0.f, 0.f, (float)gSprites.playerThrusters.width, (float)gSprites.playerThrusters.height};
+        Rectangle dst    = {cx, cy, size, size};
+        Vector2   origin = {size * 0.5f, size * 0.5f};
+
+        // Mitad izquierda
+        BeginScissorMode(ix - half, iy - half, half, isize);
+        DrawTexturePro(gSprites.playerThrusters, src, dst, origin, 0.f,
+            {255, 255, 255, (unsigned char)(leftAlpha * 255.f)});
+        EndScissorMode();
+
+        // Mitad derecha
+        BeginScissorMode(ix, iy - half, half, isize);
+        DrawTexturePro(gSprites.playerThrusters, src, dst, origin, 0.f,
+            {255, 255, 255, (unsigned char)(rightAlpha * 255.f)});
+        EndScissorMode();
+
+        // Brillo aditivo en el propulsor activo al moverse
+        if (fabsf(vx) > threshold) {
+            BeginBlendMode(BLEND_ADDITIVE);
+            float glow = pulse * 0.35f;
+            Color gc = {255, 255, 255, (unsigned char)(glow * 255.f)};
+            if (vx > threshold) {
+                BeginScissorMode(ix - half, iy - half, half, isize);
+                DrawTexturePro(gSprites.playerThrusters, src, dst, origin, 0.f, gc);
+                EndScissorMode();
+            } else {
+                BeginScissorMode(ix, iy - half, half, isize);
+                DrawTexturePro(gSprites.playerThrusters, src, dst, origin, 0.f, gc);
+                EndScissorMode();
+            }
+            EndBlendMode();
+        }
+    }
+
+    // ── Cuerpo de la nave ────────────────────────────────────
+    Texture2D& bodyTex = (gSprites.playerBody.id != 0) ? gSprites.playerBody : gSprites.player;
+    drawTextureCentered(bodyTex, cx, cy, size);
 }
 
 static float enemyBaseRotation(EnemyType type) {
@@ -402,21 +524,22 @@ static float enemyBaseRotation(EnemyType type) {
             return 0.f;
         case EnemyType::ZAKO_BLUE:
         case EnemyType::ZAKO_BLUE2:
+            return 0.f;
         case EnemyType::ZAKO_GREEN:
             return 180.f;
     }
     return 0.f;
 }
 
-void drawEnemy(EnemyType type, float cx, float cy, float rotationDeg = 0.f) {
+void drawEnemy(EnemyType type, float cx, float cy, float rotationDeg = 0.f, int animOffset = 0) {
     switch (type) {
         case EnemyType::FLAGSHIP:
         case EnemyType::ESCORT:
-            drawTextureCentered(gSprites.enemy1, cx, cy, ENEMY_DRAW_SIZE, rotationDeg, false);
+            drawTextureCentered(gSprites.enemy1Anim[(gEnemyAnimFrame + animOffset) % 3], cx, cy, ENEMY_DRAW_SIZE, rotationDeg, false);
             break;
         case EnemyType::ZAKO_BLUE:
         case EnemyType::ZAKO_BLUE2:
-            drawTextureCentered(gSprites.enemy2, cx, cy, ENEMY_DRAW_SIZE, rotationDeg, false);
+            drawTextureCentered(gSprites.enemy2Anim[(gEnemy2AnimFrame + animOffset) % 3], cx, cy, ENEMY_DRAW_SIZE, rotationDeg, false);
             break;
         case EnemyType::ZAKO_GREEN:
             drawTextureCentered(gSprites.enemy3, cx, cy, ENEMY_DRAW_SIZE, rotationDeg, false);
@@ -492,6 +615,7 @@ struct Player {
     float  x = SW / 2.f;
     float  y = PLAYER_Y;
     float  vx = 0.f;
+    float  thrusterTime = 0.f;
     int    lives = 3;
     int    shotLevel = 1;      // 1=single, 2=double, 3=triple
     float  shotCooldown = 0.22f;
@@ -780,6 +904,18 @@ struct Game {
         stars.update(dt);
         updateParticles(dt);
 
+        // Animación de enemigos
+        gEnemyAnimTimer += dt;
+        if (gEnemyAnimTimer >= ENEMY_ANIM_INTERVAL) {
+            gEnemyAnimTimer -= ENEMY_ANIM_INTERVAL;
+            gEnemyAnimFrame = (gEnemyAnimFrame + 1) % 3;
+        }
+        gEnemy2AnimTimer += dt;
+        if (gEnemy2AnimTimer >= ENEMY2_ANIM_INTERVAL) {
+            gEnemy2AnimTimer -= ENEMY2_ANIM_INTERVAL;
+            gEnemy2AnimFrame = (gEnemy2AnimFrame + 1) % 3;
+        }
+
         switch (state) {
             case GameState::ATTRACT:   updateAttract(dt);  break;
             case GameState::PLAYING:   updatePlaying(dt);  break;
@@ -846,6 +982,8 @@ struct Game {
             if (player.invTimer <= 0.f) player.invincible = false;
         }
         if (player.shotTimer > 0.f) player.shotTimer -= dt;
+
+        player.thrusterTime += dt;
 
         // Player movement with acceleration/deceleration ramps
         float moveInput = 0.f;
@@ -1221,8 +1359,8 @@ struct Game {
     void drawEnemies() {
         if (boss.active) {
             drawTextureCentered(
-                (boss.type == EnemyType::FLAGSHIP) ? gSprites.enemy1 :
-                (boss.type == EnemyType::ZAKO_BLUE ? gSprites.enemy2 : gSprites.enemy3),
+                (boss.type == EnemyType::FLAGSHIP) ? gSprites.enemy1Anim[(gEnemyAnimFrame) % 3] :
+                (boss.type == EnemyType::ZAKO_BLUE ? gSprites.enemy2Anim[(gEnemy2AnimFrame) % 3] : gSprites.enemy3),
                 boss.x, boss.y, boss.size);
 
             float bw = 180.f;
@@ -1245,7 +1383,7 @@ struct Game {
                 float aimDeg = std::atan2(dy, dx) * RAD2DEG - 90.f;
                 rot += aimDeg;
             }
-            drawEnemy(e.type, e.x, e.y, rot);
+            drawEnemy(e.type, e.x, e.y, rot, e.col);
         }
     }
 
@@ -1302,7 +1440,7 @@ struct Game {
         bool showPlayer = player.alive &&
             (!player.invincible || (int)(player.invTimer * 10) % 2 == 0);
         if (showPlayer)
-            drawPlayerShip(player.x, player.y);
+            drawPlayerShip(player.x, player.y, player.vx, player.thrusterTime);
 
         drawHUD();
     }
