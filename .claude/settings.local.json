@@ -55,7 +55,15 @@
       "Bash(python extract_sprites.py enemyGreenTile.png --threshold 60 --detect-threshold 60 --size 500x500 --min-area 5000 --output-dir sprites_out)",
       "Bash(cp /home/ramon/Documentos/GitHub/claude_galaxian/claude_galaxian/tools2/sprites_out/enemyGreenTile_sprite_01.png /home/ramon/Documentos/GitHub/claude_galaxian/claude_galaxian/sprites_new/enemy2_f01.png)",
       "Bash(cp /home/ramon/Documentos/GitHub/claude_galaxian/claude_galaxian/tools2/sprites_out/enemyGreenTile_sprite_02.png /home/ramon/Documentos/GitHub/claude_galaxian/claude_galaxian/sprites_new/enemy2_f02.png)",
-      "Bash(cp /home/ramon/Documentos/GitHub/claude_galaxian/claude_galaxian/tools2/sprites_out/enemyGreenTile_sprite_03.png /home/ramon/Documentos/GitHub/claude_galaxian/claude_galaxian/sprites_new/enemy2_f03.png)"
+      "Bash(cp /home/ramon/Documentos/GitHub/claude_galaxian/claude_galaxian/tools2/sprites_out/enemyGreenTile_sprite_03.png /home/ramon/Documentos/GitHub/claude_galaxian/claude_galaxian/sprites_new/enemy2_f03.png)",
+      "Bash(python3 -c \"from PIL import Image; img = Image.open\\(''/home/ramon/Documentos/GitHub/claude_galaxian/claude_galaxian/tools2/sprites_in/Alien1Tile6.png''\\); print\\(img.size, img.mode\\)\")",
+      "Bash(python3 -:*)",
+      "Bash(cp tools2/sprites_out/Alien1_01.png sprites_new/enemy2_f01.png)",
+      "Bash(cp tools2/sprites_out/Alien1_02.png sprites_new/enemy2_f02.png)",
+      "Bash(cp tools2/sprites_out/Alien1_03.png sprites_new/enemy2_f03.png)",
+      "Bash(cp tools2/sprites_out/Alien1_04.png sprites_new/enemy2_f04.png)",
+      "Bash(cp tools2/sprites_out/Alien1_05.png sprites_new/enemy2_f05.png)",
+      "Bash(cp tools2/sprites_out/Alien1_06.png sprites_new/enemy2_f06.png)"
     ]
   }
 }

@@ -45,7 +45,7 @@ static constexpr float FORM_COL_PHASE= 0.60f;
 // Enemy bullet
 static constexpr float EBULLET_W     = 4.f;
 static constexpr float EBULLET_H     = 10.f;
-static constexpr float EBULLET_SPEED = 240.f;
+static constexpr float EBULLET_SPEED_BASE = 260.f;
 
 // Particles
 static constexpr float PARTICLE_LIFE = 0.55f;
@@ -159,18 +159,39 @@ static std::vector<Flash>    gFlashes;
 static std::vector<Debris>   gDebris;
 static float                 gShake = 0.f;
 
-void spawnExplosion(float cx, float cy, bool big = false) {
+void spawnExplosion(float cx, float cy, bool big = false, EnemyType etype = EnemyType::ZAKO_BLUE, bool isPlayer = false) {
     // Screen shake
     gShake = std::max(gShake, big ? 7.f : 4.f);
 
     // Debris fragments (rotando, se desvanecen lento)
     int dcount = big ? 5 : 2;
-    static const Color debrisColors[4] = {
-        {220, 220, 220, 255}, // grey metal
-        {255, 180,  40, 255}, // hot orange
-        {100, 210, 255, 255}, // blue hull
-        {255, 255, 120, 255}, // yellow spark
-    };
+    // Paleta de debris según tipo de enemigo
+    Color debrisColors[4];
+    if (isPlayer) {
+        // Blanco / plateado (jugador)
+        debrisColors[0] = {255, 255, 255, 255};
+        debrisColors[1] = {200, 220, 255, 255};
+        debrisColors[2] = {160, 200, 255, 255};
+        debrisColors[3] = {255, 240, 180, 255};
+    } else if (etype == EnemyType::FLAGSHIP || etype == EnemyType::ESCORT || etype == EnemyType::ZAKO_BLUE2) {
+        // Rojo / naranja (enemy1)
+        debrisColors[0] = {255,  60,  30, 255};
+        debrisColors[1] = {255, 140,  20, 255};
+        debrisColors[2] = {220,  30,  30, 255};
+        debrisColors[3] = {255, 200,  80, 255};
+    } else if (etype == EnemyType::ZAKO_BLUE) {
+        // Verde (enemy2)
+        debrisColors[0] = { 60, 220,  80, 255};
+        debrisColors[1] = {120, 255, 100, 255};
+        debrisColors[2] = { 30, 180,  60, 255};
+        debrisColors[3] = {200, 255, 150, 255};
+    } else {
+        // Lila / violeta (enemy3 ZAKO_GREEN)
+        debrisColors[0] = {180,  80, 255, 255};
+        debrisColors[1] = {220, 140, 255, 255};
+        debrisColors[2] = {130,  50, 200, 255};
+        debrisColors[3] = {255, 180, 255, 255};
+    }
     for (int i = 0; i < dcount; ++i) {
         float angle = GetRandomValue(0, 359) * DEG2RAD;
         float spd   = (float)GetRandomValue(70, big ? 200 : 140);
@@ -213,10 +234,31 @@ void spawnExplosion(float cx, float cy, bool big = false) {
         p.type = (GetRandomValue(0, 2) == 0) ? ParticleType::SPARK : ParticleType::DOT;
 
         int roll = GetRandomValue(0, 3);
-        if      (roll == 0) p.color = {255, 255, 220, 255}; // white-yellow
-        else if (roll == 1) p.color = {255, 220,  30, 255}; // bright yellow
-        else if (roll == 2) p.color = {255, 130,   0, 255}; // orange
-        else                p.color = {255,  50,   0, 255}; // red-orange
+        if (isPlayer) {
+            // Blanco / plateado / azul hielo
+            if      (roll == 0) p.color = {255, 255, 255, 255};
+            else if (roll == 1) p.color = {200, 230, 255, 255};
+            else if (roll == 2) p.color = {150, 200, 255, 255};
+            else                p.color = {255, 240, 160, 255};
+        } else if (etype == EnemyType::ZAKO_BLUE) {
+            // Verde
+            if      (roll == 0) p.color = {200, 255, 200, 255};
+            else if (roll == 1) p.color = { 80, 255,  80, 255};
+            else if (roll == 2) p.color = { 30, 200,  60, 255};
+            else                p.color = {160, 255, 100, 255};
+        } else if (etype == EnemyType::ZAKO_GREEN) {
+            // Lila
+            if      (roll == 0) p.color = {240, 200, 255, 255};
+            else if (roll == 1) p.color = {200,  80, 255, 255};
+            else if (roll == 2) p.color = {160,  50, 220, 255};
+            else                p.color = {255, 160, 255, 255};
+        } else {
+            // Rojo / naranja (enemy1, flagship, escort)
+            if      (roll == 0) p.color = {255, 255, 220, 255};
+            else if (roll == 1) p.color = {255, 200,  30, 255};
+            else if (roll == 2) p.color = {255, 100,   0, 255};
+            else                p.color = {255,  40,   0, 255};
+        }
 
         gParticles.push_back(p);
     }
@@ -324,8 +366,8 @@ struct SpriteAssets {
     Texture2D playerBody = {};
     Texture2D playerThrusters = {};
     Texture2D enemy1Anim[3] = {};   // 3 frames de animación del cangrejo
-    Texture2D enemy2Anim[3] = {};   // 3 frames de animación del enemigo verde
-    Texture2D enemy3 = {};
+    Texture2D enemy2Anim[6] = {};   // 6 frames ping-pong del Alien1
+    Texture2D enemy3Anim[3] = {};   // 3 frames ping-pong de la Nave1
     bool loaded = false;
 
     // Carga sin recortar canvas (para sprites compuestos que deben alinearse)
@@ -411,9 +453,14 @@ struct SpriteAssets {
         enemy2Anim[0] = loadTrimmedTexture("sprites_new/enemy2_f01.png", (int)ENEMY_DRAW_SIZE);
         enemy2Anim[1] = loadTrimmedTexture("sprites_new/enemy2_f02.png", (int)ENEMY_DRAW_SIZE);
         enemy2Anim[2] = loadTrimmedTexture("sprites_new/enemy2_f03.png", (int)ENEMY_DRAW_SIZE);
-        enemy3 = loadTrimmedTexture("sprites_new/enemy3.png", (int)ENEMY_DRAW_SIZE);
+        enemy2Anim[3] = loadTrimmedTexture("sprites_new/enemy2_f04.png", (int)ENEMY_DRAW_SIZE);
+        enemy2Anim[4] = loadTrimmedTexture("sprites_new/enemy2_f05.png", (int)ENEMY_DRAW_SIZE);
+        enemy2Anim[5] = loadTrimmedTexture("sprites_new/enemy2_f06.png", (int)ENEMY_DRAW_SIZE);
+        enemy3Anim[0] = loadTrimmedTexture("sprites_new/enemy3_f01.png", (int)ENEMY_DRAW_SIZE);
+        enemy3Anim[1] = loadTrimmedTexture("sprites_new/enemy3_f02.png", (int)ENEMY_DRAW_SIZE);
+        enemy3Anim[2] = loadTrimmedTexture("sprites_new/enemy3_f03.png", (int)ENEMY_DRAW_SIZE);
         loaded = player.id != 0 && playerLife.id != 0 &&
-                 enemy1Anim[0].id != 0 && enemy2Anim[0].id != 0 && enemy3.id != 0;
+                 enemy1Anim[0].id != 0 && enemy2Anim[0].id != 0 && enemy3Anim[0].id != 0;
     }
 
     void unload() {
@@ -423,7 +470,7 @@ struct SpriteAssets {
         if (playerThrusters.id != 0)  UnloadTexture(playerThrusters);
         for (auto& t : enemy1Anim)    if (t.id != 0) UnloadTexture(t);
         for (auto& t : enemy2Anim)    if (t.id != 0) UnloadTexture(t);
-        if (enemy3.id != 0)           UnloadTexture(enemy3);
+        for (auto& t : enemy3Anim)    if (t.id != 0) UnloadTexture(t);
         loaded = false;
     }
 };
@@ -435,10 +482,17 @@ static float gEnemyAnimTimer = 0.f;
 static int   gEnemyAnimFrame = 0;
 static constexpr float ENEMY_ANIM_INTERVAL = 1.f / 7.f;
 
-// Animación enemy2: timer independiente a ~4 fps (más lento, fase por columna)
-static float gEnemy2AnimTimer = 0.f;
-static int   gEnemy2AnimFrame = 0;
-static constexpr float ENEMY2_ANIM_INTERVAL = 1.f / 4.f;
+// Animación enemy2: ping-pong 6 frames, velocidad y fase distintas por enemigo
+static float gEnemy2Time = 0.f;
+// Secuencia ping-pong: 0-1-2-3-4-5-4-3-2-1 (10 pasos)
+static constexpr int ENEMY2_PINGPONG[10] = {0,1,2,3,4,5,4,3,2,1};
+// Velocidades base por "slot" (0-9): 3.0..5.5 fps, distribuidas de forma irregular
+static constexpr float ENEMY2_SPEEDS[10] = {4.0f,3.2f,5.0f,3.7f,4.8f,3.5f,5.3f,4.2f,3.0f,4.6f};
+
+// Animación enemy3: ping-pong 3 frames (0-1-2-1 = 4 pasos)
+static float gEnemy3Time = 0.f;
+static constexpr int   ENEMY3_PINGPONG[4]  = {0,1,2,1};
+static constexpr float ENEMY3_SPEEDS[10]   = {3.5f,4.2f,3.0f,4.8f,3.8f,5.0f,3.2f,4.5f,3.6f,4.1f};
 
 static void drawTextureCentered(const Texture2D& tex, float cx, float cy, float size, float rotationDeg = 0.f, bool pixelSnap = true) {
     if (tex.id == 0) return;
@@ -526,7 +580,7 @@ static float enemyBaseRotation(EnemyType type) {
         case EnemyType::ZAKO_BLUE2:
             return 0.f;
         case EnemyType::ZAKO_GREEN:
-            return 180.f;
+            return 0.f;
     }
     return 0.f;
 }
@@ -538,12 +592,23 @@ void drawEnemy(EnemyType type, float cx, float cy, float rotationDeg = 0.f, int 
             drawTextureCentered(gSprites.enemy1Anim[(gEnemyAnimFrame + animOffset) % 3], cx, cy, ENEMY_DRAW_SIZE, rotationDeg, false);
             break;
         case EnemyType::ZAKO_BLUE:
-        case EnemyType::ZAKO_BLUE2:
-            drawTextureCentered(gSprites.enemy2Anim[(gEnemy2AnimFrame + animOffset) % 3], cx, cy, ENEMY_DRAW_SIZE, rotationDeg, false);
+        case EnemyType::ZAKO_BLUE2: {
+            int slot  = animOffset % 10;
+            float spd = ENEMY2_SPEEDS[slot];
+            // Desfase de fase: cada slot empieza en un punto diferente del ciclo
+            float phase = slot * 1.3f;
+            int step  = (int)((gEnemy2Time * spd + phase)) % 10;
+            drawTextureCentered(gSprites.enemy2Anim[ENEMY2_PINGPONG[step]], cx, cy, ENEMY_DRAW_SIZE, rotationDeg, false);
             break;
-        case EnemyType::ZAKO_GREEN:
-            drawTextureCentered(gSprites.enemy3, cx, cy, ENEMY_DRAW_SIZE, rotationDeg, false);
+        }
+        case EnemyType::ZAKO_GREEN: {
+            int slot  = animOffset % 10;
+            float spd = ENEMY3_SPEEDS[slot];
+            float phase = slot * 1.1f;
+            int step  = (int)(gEnemy3Time * spd + phase) % 4;
+            drawTextureCentered(gSprites.enemy3Anim[ENEMY3_PINGPONG[step]], cx, cy, ENEMY_DRAW_SIZE, rotationDeg, false);
             break;
+        }
     }
 }
 
@@ -624,6 +689,12 @@ struct Player {
     float  invTimer    = 0.f;
     bool   alive       = true;
 
+    // Power-up temporal
+    bool        hasPowerUp    = false;
+    PowerUpType activePowerUp = PowerUpType::FIRE_RATE;
+    float       powerUpTimer  = 0.f;
+    static constexpr float POWERUP_DURATION = 18.f;
+
     Rectangle hitbox() const { return { x-5, y-16, 10, 32 }; }
 };
 
@@ -654,7 +725,7 @@ struct Game {
 
     // Dive timer
     float  diveTimer   = 0.f;
-    float  diveInterval= 3.f;   // seconds between dive groups
+    float  diveInterval= 2.2f;  // seconds between dive groups
 
     // Death / clear timers
     float  stateTimer  = 0.f;
@@ -802,10 +873,11 @@ struct Game {
                     group.push_back(e);
             }
         } else {
-            // Random 1-2 Zakos
+            // 1-3 Zakos según ronda
             std::shuffle(candidates.begin(), candidates.end(),
                 std::default_random_engine(GetRandomValue(0,99999)));
-            int cnt = GetRandomValue(1, 2);
+            int maxCnt = (round >= 4) ? 3 : (round >= 2 ? 2 : 1);
+            int cnt = GetRandomValue(1, maxCnt);
             for (int i = 0; i < cnt && i < (int)candidates.size(); ++i)
                 group.push_back(candidates[i]);
         }
@@ -837,16 +909,17 @@ struct Game {
         e.p2 = {e.diveTargetX + side*70.f, PLAYER_Y - 200.f};
         e.p3 = {e.diveTargetX, (float)SH + 60.f};      // fixed target (no homing)
 
-        // Bullets setup
+        // Bullets setup — escalan con la ronda
+        float roundMult = std::max(0.55f, 1.f - (round - 1) * 0.08f); // intervalo se reduce
         if (e.type == EnemyType::FLAGSHIP) {
-            e.bulletsLeft  = 3;
-            e.shootInterval = 0.4f;
+            e.bulletsLeft  = 2 + std::min(round - 1, 2);  // 2-4
+            e.shootInterval = 0.4f * roundMult;
         } else if (e.type == EnemyType::ESCORT) {
-            e.bulletsLeft  = 2;
-            e.shootInterval = 0.5f;
+            e.bulletsLeft  = 1 + std::min(round / 2, 2);  // 1-3
+            e.shootInterval = 0.5f * roundMult;
         } else {
-            e.bulletsLeft  = GetRandomValue(1, 2);
-            e.shootInterval = 0.6f;
+            e.bulletsLeft  = GetRandomValue(1, 1 + std::min(round / 2, 2)); // 1-3
+            e.shootInterval = 0.6f * roundMult;
         }
         e.shootTimer = e.shootInterval * 0.5f;
     }
@@ -874,7 +947,7 @@ struct Game {
     }
 
     void spawnPowerUp(float x, float y) {
-        if (GetRandomValue(0, 99) > 22) return; // ~23% drop chance
+        if (GetRandomValue(0, 99) > 7) return; // ~8% drop chance
         PowerUp p;
         p.x = x;
         p.y = y;
@@ -886,17 +959,26 @@ struct Game {
     }
 
     void applyPowerUp(PowerUpType type) {
+        player.hasPowerUp    = true;
+        player.activePowerUp = type;
+        player.powerUpTimer  = Player::POWERUP_DURATION;
         switch (type) {
             case PowerUpType::FIRE_RATE:
-                player.shotCooldown = std::max(0.08f, player.shotCooldown - 0.03f);
+                player.shotCooldown = 0.10f;
                 break;
             case PowerUpType::DOUBLE_SHOT:
-                player.shotLevel = std::max(player.shotLevel, 2);
+                player.shotLevel = 2;
                 break;
             case PowerUpType::TRIPLE_SHOT:
                 player.shotLevel = 3;
                 break;
         }
+    }
+
+    void expirePowerUp() {
+        player.hasPowerUp   = false;
+        player.shotLevel    = 1;
+        player.shotCooldown = 0.22f;
     }
 
     // ── update ────────────────────────────────────────────────
@@ -910,11 +992,8 @@ struct Game {
             gEnemyAnimTimer -= ENEMY_ANIM_INTERVAL;
             gEnemyAnimFrame = (gEnemyAnimFrame + 1) % 3;
         }
-        gEnemy2AnimTimer += dt;
-        if (gEnemy2AnimTimer >= ENEMY2_ANIM_INTERVAL) {
-            gEnemy2AnimTimer -= ENEMY2_ANIM_INTERVAL;
-            gEnemy2AnimFrame = (gEnemy2AnimFrame + 1) % 3;
-        }
+        gEnemy2Time += dt;
+        gEnemy3Time += dt;
 
         switch (state) {
             case GameState::ATTRACT:   updateAttract(dt);  break;
@@ -969,7 +1048,7 @@ struct Game {
         if (stateTimer <= 0.f) {
             round++;
             formVX = 30.f + (round-1) * 5.f;
-            diveInterval = std::max(1.5f, 3.f - (round-1)*0.2f);
+            diveInterval = std::max(1.0f, 2.2f - (round-1)*0.15f);
             buildFormation();
             state = GameState::PLAYING;
         }
@@ -982,6 +1061,12 @@ struct Game {
             if (player.invTimer <= 0.f) player.invincible = false;
         }
         if (player.shotTimer > 0.f) player.shotTimer -= dt;
+
+        // Power-up timer
+        if (player.hasPowerUp) {
+            player.powerUpTimer -= dt;
+            if (player.powerUpTimer <= 0.f) expirePowerUp();
+        }
 
         player.thrusterTime += dt;
 
@@ -1109,7 +1194,7 @@ struct Game {
                     int pts = pointsForEnemy(e.type, e.state == EnemyState::DIVING);
                     score += pts;
                     highScore = std::max(highScore, score);
-                    spawnExplosion(e.x, e.y);
+                    spawnExplosion(e.x, e.y, false, e.type);
                     spawnPowerUp(e.x, e.y);
                     break;
                 }
@@ -1139,7 +1224,7 @@ struct Game {
                 if (!e.alive || e.state != EnemyState::DIVING) continue;
                 if (CheckCollisionRecs(e.hitbox(), player.hitbox())) {
                     e.alive = false;
-                    spawnExplosion(e.x, e.y);
+                    spawnExplosion(e.x, e.y, false, e.type);
                     killPlayer();
                     return;
                 }
@@ -1190,7 +1275,7 @@ struct Game {
             float dx = player.x - b.x;
             float dy = std::max(24.f, player.y - b.y);
             float dist = std::sqrt(dx * dx + dy * dy);
-            float spd = EBULLET_SPEED * 1.05f;
+            float spd = (EBULLET_SPEED_BASE + round * 12.f) * 1.05f;
             b.vx = (dx / dist) * spd * 0.75f;
             b.vy = (dy / dist) * spd;
             eBullets.push_back(b);
@@ -1259,11 +1344,12 @@ struct Game {
                 b.x      = e.x;
                 b.y      = e.y + 8.f;
                 b.vx     = 0.f;
-                b.vy     = EBULLET_SPEED;
+                float eBulletSpd = EBULLET_SPEED_BASE + round * 12.f;
+                b.vy     = eBulletSpd;
                 // Slight aim toward player X
                 float dx = player.x - e.x;
                 float dist = std::abs(dx) + 200.f;
-                b.vx = (dx / dist) * EBULLET_SPEED * 0.3f;
+                b.vx = (dx / dist) * eBulletSpd * 0.3f;
                 eBullets.push_back(b);
             }
         }
@@ -1291,12 +1377,14 @@ struct Game {
 
     void killPlayer() {
         if (player.invincible) return;
-        spawnExplosion(player.x, player.y, true);
+        spawnExplosion(player.x, player.y, true, EnemyType::ZAKO_BLUE, true);
         player.lives--;
         player.alive = false;
         player.shotLevel = 1;
         player.shotCooldown = 0.22f;
         player.shotTimer = 0.f;
+        player.hasPowerUp = false;
+        player.powerUpTimer = 0.f;
         pBullets.clear();
         powerUps.clear();
         for (auto& b : eBullets) b.active = false;
@@ -1342,7 +1430,16 @@ struct Game {
         // High score centered
         DrawText("HIGH SCORE", SW/2 - 50, 8, 14, WHITE);
         DrawText(TextFormat("%06d", highScore), SW/2 - 30, 22, 14, WHITE);
-        DrawText(TextFormat("SHOT x%d", player.shotLevel), 10, 34, 14, {120, 255, 120, 255});
+        if (player.hasPowerUp) {
+            // Barra de tiempo restante
+            float ratio = player.powerUpTimer / Player::POWERUP_DURATION;
+            Color barCol = (ratio > 0.35f) ? Color{120, 255, 120, 255} : Color{255, 160, 40, 255};
+            DrawText(TextFormat("SHOT x%d", player.shotLevel), 10, 34, 14, barCol);
+            DrawRectangle(10, 52, 60, 5, {60, 60, 60, 200});
+            DrawRectangle(10, 52, (int)(60.f * ratio), 5, barCol);
+        } else {
+            DrawText("SHOT x1", 10, 34, 14, {160, 160, 160, 200});
+        }
 
         // Lives (bottom left as ship icons)
         for (int i = 0; i < player.lives; ++i) {
@@ -1358,10 +1455,14 @@ struct Game {
 
     void drawEnemies() {
         if (boss.active) {
-            drawTextureCentered(
-                (boss.type == EnemyType::FLAGSHIP) ? gSprites.enemy1Anim[(gEnemyAnimFrame) % 3] :
-                (boss.type == EnemyType::ZAKO_BLUE ? gSprites.enemy2Anim[(gEnemy2AnimFrame) % 3] : gSprites.enemy3),
-                boss.x, boss.y, boss.size);
+            {
+                Texture2D& bossTex = (boss.type == EnemyType::FLAGSHIP)
+                    ? gSprites.enemy1Anim[(gEnemyAnimFrame) % 3]
+                    : (boss.type == EnemyType::ZAKO_BLUE
+                        ? gSprites.enemy2Anim[ENEMY2_PINGPONG[(int)(gEnemy2Time * 4.0f) % 10]]
+                        : gSprites.enemy3Anim[ENEMY3_PINGPONG[(int)(gEnemy3Time * 4.0f) % 4]]);
+                drawTextureCentered(bossTex, boss.x, boss.y, boss.size);
+            }
 
             float bw = 180.f;
             float bh = 8.f;
@@ -1459,8 +1560,8 @@ struct Game {
 
     void drawAttract() {
         // Big title
-        int tw = MeasureText("GALAXIAN", 48);
-        DrawText("GALAXIAN", SW/2 - tw/2, 40, 48, {255, 220, 50, 255});
+        int tw = MeasureText("GALAX IA", 48);
+        DrawText("GALAX IA", SW/2 - tw/2, 40, 48, {255, 220, 50, 255});
 
         drawEnemies();
 
