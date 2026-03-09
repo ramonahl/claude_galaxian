@@ -63,7 +63,13 @@
       "Bash(cp tools2/sprites_out/Alien1_03.png sprites_new/enemy2_f03.png)",
       "Bash(cp tools2/sprites_out/Alien1_04.png sprites_new/enemy2_f04.png)",
       "Bash(cp tools2/sprites_out/Alien1_05.png sprites_new/enemy2_f05.png)",
-      "Bash(cp tools2/sprites_out/Alien1_06.png sprites_new/enemy2_f06.png)"
+      "Bash(cp tools2/sprites_out/Alien1_06.png sprites_new/enemy2_f06.png)",
+      "Bash(brew --version)",
+      "Bash(g++ --version)",
+      "Bash(clang++ --version)",
+      "Bash(xcode-select -p)",
+      "Read(//opt/homebrew/Cellar/pkgconf/2.5.1/bin/**)",
+      "Bash(echo $PATH)"
     ]
   }
 }

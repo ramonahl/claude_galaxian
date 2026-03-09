@@ -1,0 +1,9 @@
+# Binarios compilados
+galaxian
+galaxian.exe
+sprite_tool
+sprite_tool.exe
+
+# Archivos de compilación
+*.o
+*.d
