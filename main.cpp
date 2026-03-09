@@ -690,12 +690,20 @@ struct Player {
     bool   alive       = true;
 
     // Power-up temporal
-    bool        hasPowerUp    = false;
-    PowerUpType activePowerUp = PowerUpType::FIRE_RATE;
-    float       powerUpTimer  = 0.f;
-    static constexpr float POWERUP_DURATION = 18.f;
+    bool        hasPowerUp       = false;
+    PowerUpType activePowerUp    = PowerUpType::FIRE_RATE;
+    float       powerUpTimer     = 0.f;
+    float       powerUpMaxDuration = 8.f;  // se recalcula al coger power-up
 
-    Rectangle hitbox() const { return { x-5, y-16, 10, 32 }; }
+    // Hitbox: cuerpo central ancho + franja de alas fina
+    // El sprite mide 64px; las alas ocupan la banda y-8..y+4 aprox
+    static std::array<Rectangle, 2> hitboxes(float x, float y) {
+        return {{
+            { x - 9.f,  y - 18.f, 18.f, 26.f },   // cuerpo central
+            { x - 26.f, y -  4.f, 52.f,  8.f },   // barra de alas
+        }};
+    }
+    Rectangle hitbox() const { return { x-9, y-18, 18, 26 }; }  // cuerpo (colisión simple)
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -778,11 +786,12 @@ struct Game {
             boss.active = true;
             boss.x = SW * 0.5f;
             boss.y = 130.f;
-            boss.vx = 120.f + (round / 3) * 8.f;
+            int bossLevel = round / 3;  // 1, 2, 3...
+            boss.vx = 110.f + bossLevel * 22.f;   // más rápido cada boss
             boss.size = 96.f;
-            boss.shotInterval = std::max(0.45f, 1.15f - (round / 3) * 0.05f);
-            boss.shotTimer = 0.5f;
-            boss.maxHp = 10 + (round / 3) * 2;
+            boss.shotInterval = std::max(0.28f, 1.2f - bossLevel * 0.10f);  // dispara más rápido
+            boss.shotTimer = 0.4f;
+            boss.maxHp = 10 + bossLevel * 5;       // mucho más vida
             boss.hp = boss.maxHp;
             switch (cycle) {
                 case 0: boss.type = EnemyType::FLAGSHIP; break;  // enemy1
@@ -959,9 +968,12 @@ struct Game {
     }
 
     void applyPowerUp(PowerUpType type) {
-        player.hasPowerUp    = true;
-        player.activePowerUp = type;
-        player.powerUpTimer  = Player::POWERUP_DURATION;
+        player.hasPowerUp       = true;
+        player.activePowerUp    = type;
+        // Duración base 8s, se reduce 0.4s por ronda (mínimo 3s)
+        float dur = std::max(3.f, 8.f - (round - 1) * 0.4f);
+        player.powerUpMaxDuration = dur;
+        player.powerUpTimer       = dur;
         switch (type) {
             case PowerUpType::FIRE_RATE:
                 player.shotCooldown = 0.10f;
@@ -1094,8 +1106,8 @@ struct Game {
             if (player.vx > 0.f) player.vx = 0.f;
         }
 
-        // Player shoot (hold to fire)
-        if (IsKeyDown(KEY_SPACE) && player.shotTimer <= 0.f) {
+        // Player shoot (flanco positivo: solo dispara al pulsar, no al mantener)
+        if (IsKeyPressed(KEY_SPACE) && player.shotTimer <= 0.f) {
             if (player.shotLevel <= 1) {
                 firePlayerShot(0.f);
             } else if (player.shotLevel == 2) {
@@ -1210,19 +1222,24 @@ struct Game {
 
         // Collision: enemy bullets vs player
         if (!player.invincible) {
+            auto playerBoxes = Player::hitboxes(player.x, player.y);
             for (auto& b : eBullets) {
                 if (!b.active) continue;
-                if (CheckCollisionRecs(b.rect(), player.hitbox())) {
+                Rectangle br = b.rect();
+                if (CheckCollisionRecs(br, playerBoxes[0]) ||
+                    CheckCollisionRecs(br, playerBoxes[1])) {
                     b.active = false;
                     killPlayer();
                     return;
                 }
             }
 
-            // Collision: diving enemy body vs player
+            // Collision: diving/returning enemy body vs player
             for (auto& e : enemies) {
-                if (!e.alive || e.state != EnemyState::DIVING) continue;
-                if (CheckCollisionRecs(e.hitbox(), player.hitbox())) {
+                if (!e.alive || (e.state != EnemyState::DIVING && e.state != EnemyState::RETURNING)) continue;
+                Rectangle er = e.hitbox();
+                if (CheckCollisionRecs(er, playerBoxes[0]) ||
+                    CheckCollisionRecs(er, playerBoxes[1])) {
                     e.alive = false;
                     spawnExplosion(e.x, e.y, false, e.type);
                     killPlayer();
@@ -1230,7 +1247,8 @@ struct Game {
                 }
             }
 
-            if (boss.active && CheckCollisionRecs(boss.hitbox(), player.hitbox())) {
+            if (boss.active && (CheckCollisionRecs(boss.hitbox(), playerBoxes[0]) ||
+                                CheckCollisionRecs(boss.hitbox(), playerBoxes[1]))) {
                 killPlayer();
                 return;
             }
@@ -1264,8 +1282,14 @@ struct Game {
     }
 
     void fireBossVolley() {
-        const float emitter[3] = {-0.32f, 0.f, 0.32f};
-        for (float rel : emitter) {
+        int bossLevel = round / 3;
+        // 3 balas en boss 1, 4 en boss 2, 5 en boss 3+
+        int count = std::min(3 + (bossLevel - 1), 5);
+        // Posiciones relativas distribuidas uniformemente
+        float spread = 0.65f;
+        for (int i = 0; i < count; ++i) {
+            float rel = (count == 1) ? 0.f
+                : -spread + (2.f * spread / (count - 1)) * i;
             Bullet b;
             b.active = true;
             b.enemy = true;
@@ -1275,8 +1299,10 @@ struct Game {
             float dx = player.x - b.x;
             float dy = std::max(24.f, player.y - b.y);
             float dist = std::sqrt(dx * dx + dy * dy);
-            float spd = (EBULLET_SPEED_BASE + round * 12.f) * 1.05f;
-            b.vx = (dx / dist) * spd * 0.75f;
+            float spd = (EBULLET_SPEED_BASE + round * 14.f) * 1.1f;
+            // A mayor bossLevel, más apuntadas al jugador
+            float aimFactor = std::min(0.55f + bossLevel * 0.1f, 0.9f);
+            b.vx = (dx / dist) * spd * aimFactor;
             b.vy = (dy / dist) * spd;
             eBullets.push_back(b);
         }
@@ -1346,10 +1372,11 @@ struct Game {
                 b.vx     = 0.f;
                 float eBulletSpd = EBULLET_SPEED_BASE + round * 12.f;
                 b.vy     = eBulletSpd;
-                // Slight aim toward player X
+                // Aim mejora progresivamente con las rondas (0.25 ronda 1 → 0.55 ronda 7+)
+                float aimFactor = std::min(0.25f + (round - 1) * 0.05f, 0.55f);
                 float dx = player.x - e.x;
                 float dist = std::abs(dx) + 200.f;
-                b.vx = (dx / dist) * eBulletSpd * 0.3f;
+                b.vx = (dx / dist) * eBulletSpd * aimFactor;
                 eBullets.push_back(b);
             }
         }
@@ -1432,7 +1459,8 @@ struct Game {
         DrawText(TextFormat("%06d", highScore), SW/2 - 30, 22, 14, WHITE);
         if (player.hasPowerUp) {
             // Barra de tiempo restante
-            float ratio = player.powerUpTimer / Player::POWERUP_DURATION;
+            float ratio = (player.powerUpMaxDuration > 0.f)
+                ? player.powerUpTimer / player.powerUpMaxDuration : 0.f;
             Color barCol = (ratio > 0.35f) ? Color{120, 255, 120, 255} : Color{255, 160, 40, 255};
             DrawText(TextFormat("SHOT x%d", player.shotLevel), 10, 34, 14, barCol);
             DrawRectangle(10, 52, 60, 5, {60, 60, 60, 200});
